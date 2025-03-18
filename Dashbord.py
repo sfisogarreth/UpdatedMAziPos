@@ -6,10 +6,12 @@ import os
 import subprocess
 from tkinter import messagebox, Label, Button, PhotoImage
 from tkinter import ttk
+import database
 
 class LiquorStorePOS:
     def create_connection(self):
-        return sqlite3.connect('liquor_store.db')
+        db_path = os.path.join(os.path.dirname(__file__), 'Mazi~flow~order.db')  # Use the directory of your script
+        return sqlite3.connect(db_path)
 
     def create_table(self):
         conn = self.create_connection()
@@ -30,14 +32,17 @@ class LiquorStorePOS:
     def insert_into_database(self, cart_data):
         conn = self.create_connection()
         cursor = conn.cursor()
-        for item_name, quantity, price, total_price in cart_data:
-            cursor.execute('''
-                INSERT INTO sales (item_name, quantity, price, total_price, date)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (item_name, quantity, price, total_price, str(datetime.datetime.now())))
-        conn.commit()
-        conn.close()
-
+        try:
+            for item_name, quantity, price, total_price in cart_data:
+                print(f"Inserting: {item_name}, {quantity}, {price}, {total_price}")  # Debugging line
+                cursor.execute('''INSERT INTO sales (item_name, quantity, price, total_price, date)
+                                  VALUES (?, ?, ?, ?, ?)''',
+                               (item_name, quantity, price, total_price, str(datetime.datetime.now())))
+            conn.commit()
+        except Exception as e:
+            messagebox.showerror('Database Error', f"Error inserting data: {e}")
+        finally:
+            conn.close()
     def gather_cart_data(self):
         cart_data = []
         for row_id in self.tree.get_children():
@@ -47,6 +52,7 @@ class LiquorStorePOS:
             price = float(values[3][1:])  # Remove 'R' and convert to float
             total_price = quantity * price
             cart_data.append((item_name, quantity, price, total_price))
+        print(cart_data)  # Debugging line to check the cart data
         return cart_data
 
     def pay_bill(self):
@@ -54,11 +60,11 @@ class LiquorStorePOS:
         if not cart_data:
             messagebox.showwarning('No Items', 'There are no items in the cart to pay.')
             return
+        print("Cart Data:", cart_data)  # Debugging line
         self.insert_into_database(cart_data)
         self.tree.delete(*self.tree.get_children())  # Clear the cart
         self.update_total()
         messagebox.showinfo('Payment', 'Bill paid and data saved to database!')
-
     def __init__(self):
         # Initialize main window
         self.root = CTk()
@@ -374,21 +380,22 @@ class LiquorStorePOS:
             button.grid(row=index // max_columns * 2 + 1, column=index % max_columns, padx=10, pady=10)
 
     def pay_bill(self):
-        cart_data = self.gather_cart_data()  # Gather the cart data
+        """Processes the payment and stores sales data in MySQL."""
+        cart_data = self.gather_cart_data()
 
         if not cart_data:
             messagebox.showwarning("No Items", "There are no items in the cart to pay.")
             return
 
-        # Insert the cart data into the database
-        self.insert_into_database(cart_data)
+        # Insert sales data into MySQL
+        for item_name, quantity, price, total_price in cart_data:
+            database.insert_sale(item_name, quantity, price, total_price)
 
         # Clear the cart (Treeview) and reset total
-        self.tree.delete(*self.tree.get_children())  # Clear Treeview
-        self.update_total()  # Reset total display
+        self.tree.delete(*self.tree.get_children())
+        self.update_total()
 
-        # Show success message
-        messagebox.showinfo("Payment", "Bill paid and data saved to database!")
+        messagebox.showinfo("Payment", "Bill paid and data saved to MySQL database!")
 
     def logout(self):
         self.root.destroy()
