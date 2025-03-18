@@ -4,13 +4,16 @@ from customtkinter import *
 from PIL import Image, ImageTk
 import os
 import subprocess
-from tkinter import messagebox, Label, Button, PhotoImage
+from tkinter import messagebox, Label, Button
 from tkinter import ttk
-import database
+from inventory_manager import InventoryManager
+from tkinter import simpledialog
 
-class LiquorStorePOS:
+
+class Mazi_Flow:
     def create_connection(self):
         db_path = os.path.join(os.path.dirname(__file__), 'Mazi~flow~order.db')  # Use the directory of your script
+        print(f"Database path: {db_path}")
         return sqlite3.connect(db_path)
 
     def create_table(self):
@@ -32,17 +35,24 @@ class LiquorStorePOS:
     def insert_into_database(self, cart_data):
         conn = self.create_connection()
         cursor = conn.cursor()
+        inventory = InventoryManager()
+
         try:
             for item_name, quantity, price, total_price in cart_data:
                 print(f"Inserting: {item_name}, {quantity}, {price}, {total_price}")  # Debugging line
                 cursor.execute('''INSERT INTO sales (item_name, quantity, price, total_price, date)
                                   VALUES (?, ?, ?, ?, ?)''',
                                (item_name, quantity, price, total_price, str(datetime.datetime.now())))
+
+                # Deduct stock from inventory
+                inventory.update_stock(item_name, quantity)
+
             conn.commit()
         except Exception as e:
             messagebox.showerror('Database Error', f"Error inserting data: {e}")
         finally:
             conn.close()
+
     def gather_cart_data(self):
         cart_data = []
         for row_id in self.tree.get_children():
@@ -65,12 +75,52 @@ class LiquorStorePOS:
         self.tree.delete(*self.tree.get_children())  # Clear the cart
         self.update_total()
         messagebox.showinfo('Payment', 'Bill paid and data saved to database!')
+
+    def restock_item(self):
+        inventory = InventoryManager()
+        item_name = simpledialog.askstring("Restock", "Enter item name:")
+        if not item_name:
+            return  # If user cancels input
+
+        quantity = simpledialog.askinteger("Restock", "Enter quantity to add:")
+        if quantity and quantity > 0:
+            inventory.add_stock(item_name, quantity)
+            messagebox.showinfo("Success", f"Stock updated: {item_name} +{quantity}")
+        else:
+            messagebox.showerror("Invalid Input", "Please enter a valid quantity.")
+
+    def export_to_csv(self, csv_filename):
+        conn = self.create_connection()
+        cursor = conn.cursor()
+        try:
+            # Fetch all data from the "sales" table
+            cursor.execute("SELECT * FROM sales")
+            rows = cursor.fetchall()
+
+            # Get column names
+            column_names = [description[0] for description in cursor.description]
+
+            # Write to a CSV file
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(column_names)  # Write column headers
+                writer.writerows(rows)  # Write all rows
+            print(f"Data exported to {csv_filename} successfully!")
+        except Exception as e:
+            print(f"Error exporting to CSV: {e}")
+        finally:
+            conn.close()
+
+
     def __init__(self):
         # Initialize main window
         self.root = CTk()
-        self.root.title("Dashbord")
+        self.root.title("Dashboard")
         self.root.geometry("1400x700+0+0")
         self.root.configure(bg="#1A5276")
+
+        # Create the database and table
+        self.create_table()
 
         # Initialize styles
         self.init_styles()
@@ -88,11 +138,6 @@ class LiquorStorePOS:
         self.cart = []
         self.current_category = None
         self.show_items("Beers")  # Display Beers by default
-        self.show_items("Ciders")
-        self.show_items("Tots")
-        self.show_items("Drinks")
-        self.show_items("Specials")
-        self.show_items("Food")
 
         # Start the application
         self.root.mainloop()
@@ -100,7 +145,7 @@ class LiquorStorePOS:
     def init_styles(self):
         # Tkinter styles
         style = ttk.Style()
-        style.configure("Top.TFrame", background="#000000",font=("Arial", 24, "bold"))
+        style.configure("Top.TFrame", background="#000000", font=("Arial", 24, "bold"))
         style.configure("Sidebar.TFrame", background="#000000")
         style.configure("Item.TFrame", background="#000000")
         style.configure("Bill.TFrame", background="#161C30")
@@ -132,11 +177,9 @@ class LiquorStorePOS:
         self.root.grid_rowconfigure(2, weight=1)  # Bill section
         self.root.grid_columnconfigure(1, weight=2)  # Categories and items
         self.root.grid_columnconfigure(2, weight=2)  # Bill section
-        self.root.grid_rowconfigure(1, weight=0)  # Adjust category frame weight
-##############################################################################
+
     def create_top_frame(self):
         # Title Label
-        # Ensure the image path is correct
         image_path = "images/inventory-management.png"
         abs_path = os.path.abspath(image_path)  # Get full path
 
@@ -182,11 +225,9 @@ class LiquorStorePOS:
             fg_color="#00008B",  # Background color
             hover_color="#FF0000"  # Hover color
         )
-        logoutBtn.pack(side="right", padx=(10,65) , pady=10)  # Align to the right
-##########################################################################
+        logoutBtn.pack(side="right", padx=(10, 65), pady=10)  # Align to the right
 
     def create_sidebar_buttons(self):
-
         # Load the image using Pillow
         image_path = "images/2011.jpg"
 
@@ -218,69 +259,68 @@ class LiquorStorePOS:
                 command=command
             ).grid(row=i + 1, column=0, pady=2, padx=2, sticky="ew")  # Adjust row to avoid overlap
 
-    def create_category_buttons(self, text=None):
+    def create_category_buttons(self):
         self.categories = {
-    "Beers": [
-        ("Castle Lager", "images/Castlelager.jpeg", 29.99),
-        ("Black Label", "images/black label.jpeg", 29.99),
-        ("Castle Lite", "images/castleLite.jpeg", 29.99),
-        ("Budweiser", "images/Budwiser.jpeg", 29.99),
-        ("Heineken", "images/Heineken.jpeg", 34.99),
-        ("Amstel Lager", "images/Amstel.jpeg", 34.99),
-        ("W/Draught", "images/Windhoek Draught.jpeg", 34.99),
-        ("W/Lager", "images/Windhoek.jpeg", 34.99),
-        ("Miller", "images/Heineken.jpeg", 34.99)
-    ],
-    "Ciders": [
-        ("Savanna", "images/savanna.jpeg", 34.99),
-        ("Hunters Gold", "images/huntersgold.jpeg", 32.99),
-        ("Smirnoff Spin", "images/Spin.jpeg", 34.99),
-        ("Brutal", "images/Brutal.jpeg", 34.99),
-        ("Bernini Blush", "images/beniniBlush.jpeg", 34.99),
-        ("Black Crown", "images/Blackcrown.jpeg", 34.99),
-        ("Strongbow", "images/Strongbow.jpeg", 34.99),
-        ("Hunters Dry", "images/huntersdry.jpeg", 34.99)
-    ],
-    "Tots": [
-        ("Jameson", "images/Jameson.jpeg", 39.99),
-        ("Jack Daniels", "images/Jackdaniels.jpeg", 44.99),
-        ("Chivas Regal", "images/chivas.jpeg", 42.99),
-        ("Hennessy", "images/henessy.jpeg", 49.99),
-        ("Bacardi", "images/Bacardi.jpeg", 24.99),
-        ("Tequila", "images/Tequila.jpeg", 24.99),
-        ("Bacardi", "images/Bacardi.jpeg", 24.99),
-        ("Jagermeister", "images/Bacardi.jpeg", 24.99),
-        ("Bacardi", "images/Bacardi.jpeg", 24.99),
-    ],
-    "Drinks": [
-        ("Coke", "images/Coca Cola.jpeg", 24.99),
-        ("Sprite", "images/sprite.jpeg", 24.99),
-        ("Fanta", "images/fanta.jpeg", 24.99),
-        ("Red Bull", "images/Redbul.jpeg", 38.99),
-        ("Still Water", "images/still water.jpeg", 17.99),
-        ("Sparkling", "images/Sparkling.jpeg", 17.99),
-        ("Monster", "images/monsterenergy.jpeg", 17.99),
-        ("Dragon", "images/Dragon.jpeg", 17.99)
-    ],
-    "Specials": [
-        ("G & T", "images/2Gin&Tonic Sprite.jpeg", 74.99),
-        ("Whisky&Coke", "images/2Whisky & Coke.jpeg", 64.99),
-        ("Mojito", "images/mojito.jpeg", 64.99),
-        ("Long Island", "images/LongIsland.jpeg", 64.99),
-        ("Tequila Sunrise", "images/Tequila Sunrise.jpeg", 64.99)
-    ],
-    "Food": [
-        ("Burger", "images/Burger.jpeg", 64.99),
-        ("Pizza", "images/pizza.jpeg", 55.00),
-        ("Hot Dog", "images/c.jpeg", 34.99),
-        ("Steak", "images/Steak.jpeg", 79.99),
-        ("Burger", "images/Burger.jpeg", 64.99),
-        ("Pizza", "images/pizza.jpeg", 55.00),
-        ("Hot Dog", "images/c.jpeg", 34.99),
-        ("Steak", "images/Steak.jpeg", 79.99)
-    ]
-}
-
+            "Beers": [
+                ("Castle Lager", "images/Castlelager.jpeg", 29.99),
+                ("Black Label", "images/black label.jpeg", 29.99),
+                ("Castle Lite", "images/castleLite.jpeg", 29.99),
+                ("Budweiser", "images/Budwiser.jpeg", 29.99),
+                ("Heineken", "images/Heineken.jpeg", 34.99),
+                ("Amstel Lager", "images/Amstel.jpeg", 34.99),
+                ("W/Draught", "images/Windhoek Draught.jpeg", 34.99),
+                ("W/Lager", "images/Windhoek.jpeg", 34.99),
+                ("Miller", "images/Heineken.jpeg", 34.99)
+            ],
+            "Ciders": [
+                ("Savanna", "images/savanna.jpeg", 34.99),
+                ("Hunters Gold", "images/huntersgold.jpeg", 32.99),
+                ("Smirnoff Spin", "images/Spin.jpeg", 34.99),
+                ("Brutal", "images/Brutal.jpeg", 34.99),
+                ("Bernini Blush", "images/beniniBlush.jpeg", 34.99),
+                ("Black Crown", "images/Blackcrown.jpeg", 34.99),
+                ("Strongbow", "images/Strongbow.jpeg", 34.99),
+                ("Hunters Dry", "images/huntersdry.jpeg", 34.99)
+            ],
+            "Tots": [
+                ("Jameson", "images/Jameson.jpeg", 39.99),
+                ("Jack Daniels", "images/Jackdaniels.jpeg", 44.99),
+                ("Chivas Regal", "images/chivas.jpeg", 42.99),
+                ("Hennessy", "images/henessy.jpeg", 49.99),
+                ("Bacardi", "images/Bacardi.jpeg", 24.99),
+                ("Tequila", "images/Tequila.jpeg", 24.99),
+                ("Bacardi", "images/Bacardi.jpeg", 24.99),
+                ("Jagermeister", "images/Bacardi.jpeg", 24.99),
+                ("Bacardi", "images/Bacardi.jpeg", 24.99),
+            ],
+            "Drinks": [
+                ("Coke", "images/Coca Cola.jpeg", 24.99),
+                ("Sprite", "images/sprite.jpeg", 24.99),
+                ("Fanta", "images/fanta.jpeg", 24.99),
+                ("Red Bull", "images/Redbul.jpeg", 38.99),
+                ("Still Water", "images/still water.jpeg", 17.99),
+                ("Sparkling", "images/Sparkling.jpeg", 17.99),
+                ("Monster", "images/monsterenergy.jpeg", 17.99),
+                ("Dragon", "images/Dragon.jpeg", 17.99)
+            ],
+            "Specials": [
+                ("G & T", "images/2Gin&Tonic Sprite.jpeg", 74.99),
+                ("Whisky&Coke", "images/2Whisky & Coke.jpeg", 64.99),
+                ("Mojito", "images/mojito.jpeg", 64.99),
+                ("Long Island", "images/LongIsland.jpeg", 64.99),
+                ("Tequila Sunrise", "images/Tequila Sunrise.jpeg", 64.99)
+            ],
+            "Food": [
+                ("Burger", "images/Burger.jpeg", 64.99),
+                ("Pizza", "images/pizza.jpeg", 55.00),
+                ("Hot Dog", "images/c.jpeg", 34.99),
+                ("Steak", "images/Steak.jpeg", 79.99),
+                ("Burger", "images/Burger.jpeg", 64.99),
+                ("Pizza", "images/pizza.jpeg", 55.00),
+                ("Hot Dog", "images/c.jpeg", 34.99),
+                ("Steak", "images/Steak.jpeg", 79.99)
+            ]
+        }
 
         for category in self.categories.keys():
             frame = ttk.Frame(self.root, style="Item.TFrame")
@@ -295,6 +335,7 @@ class LiquorStorePOS:
                 style="Category.TButton",
                 command=lambda text=text: self.show_items(text)
             ).grid(row=0, column=i, padx=5, pady=5)
+
     def create_bill_section(self):
         # Treeview as a Cart
         ttk.Label(self.BillFrame, text="Order Summary", font=("Arial", 14, "bold"), background="#0b8318").pack(
@@ -314,7 +355,8 @@ class LiquorStorePOS:
         self.total_label = Label(self.BillFrame, text="TOTAL: R0.00", font=("Arial", 20, "bold"), bg="red", fg="black")
         self.total_label.pack(anchor="e", padx=10, pady=10)
 
-        Button(self.BillFrame, text="Pay Bill", width=20, font=("Arial", 18, "bold"), bg="#58D68D").pack(pady=10)
+        pay_button = Button(self.BillFrame, text="Pay Bill", width=20, font=("Arial", 18, "bold"), bg="#58D68D", command=self.pay_bill)
+        pay_button.pack(pady=10)
 
     def add_to_cart(self, item, price):
         # Check if item already exists in cart
@@ -379,29 +421,26 @@ class LiquorStorePOS:
             )
             button.grid(row=index // max_columns * 2 + 1, column=index % max_columns, padx=10, pady=10)
 
-    def pay_bill(self):
-        """Processes the payment and stores sales data in MySQL."""
-        cart_data = self.gather_cart_data()
-
-        if not cart_data:
-            messagebox.showwarning("No Items", "There are no items in the cart to pay.")
-            return
-
-        # Insert sales data into MySQL
-        for item_name, quantity, price, total_price in cart_data:
-            database.insert_sale(item_name, quantity, price, total_price)
-
-        # Clear the cart (Treeview) and reset total
-        self.tree.delete(*self.tree.get_children())
-        self.update_total()
-
-        messagebox.showinfo("Payment", "Bill paid and data saved to MySQL database!")
-
     def logout(self):
         self.root.destroy()
         subprocess.run(["python", "Login.py"])
 
+        def create_inventory_table(self):
+            conn = sqlite3.connect('Mazi~flow~order.db')
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS inventory (
+                    item_name TEXT PRIMARY KEY,
+                    stock_quantity INTEGER
+                )
+            ''')
+            conn.commit()
+            conn.close()
+            pass
+
+maziflow = Mazi_Flow()  # ✅ Create an instance first
+maziflow.create_inventory_table()
 
 # Run the application
 if __name__ == "__main__":
-    LiquorStorePOS()
+    Mazi_Flow()
