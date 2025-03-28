@@ -1,57 +1,137 @@
 import sqlite3
 import datetime
 from customtkinter import *
+from tkinter import messagebox, simpledialog, Label, Button
+import csv
+from tkinter import ttk
 from PIL import Image, ImageTk
 import os
 import subprocess
-from tkinter import messagebox, Label, Button
-from tkinter import ttk
-from inventory_manager import InventoryManager
-from tkinter import simpledialog
-
 
 class Mazi_Flow:
-    def create_connection(self):
-        db_path = os.path.join(os.path.dirname(__file__), 'Mazi~flow~order.db')  # Use the directory of your script
-        print(f"Database path: {db_path}")
-        return sqlite3.connect(db_path)
+    DATABASE_NAME = "Mazi~flow~order.db"
 
-    def create_table(self):
+    def create_connection(self):
+        try:
+            return sqlite3.connect(self.DATABASE_NAME)
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Unable to connect to the database: {e}")
+            return None
+
+    def create_tables(self):
         conn = self.create_connection()
+        if conn is None:
+            return
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sales (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_name TEXT,
-                quantity INTEGER,
-                price REAL,
-                total_price REAL,
-                date TEXT
-            )
-        ''')
-        conn.commit()
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS sales (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_name TEXT,
+                    quantity INTEGER,
+                    price REAL,
+                    total_price REAL,
+                    date TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS employees (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    position TEXT,
+                    salary REAL
+                )
+            ''')
+            conn.commit()
+            print("Tables ensured in database.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Error creating tables: {e}")
+        finally:
+            conn.close()
+
+    def check_sales_data():
+        conn = sqlite3.connect("Mazi_Store.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM sales")
+        rows = cursor.fetchall()
         conn.close()
+
+        for row in rows:
+            print(row)
+    def create_inventory_table(self):
+        conn = sqlite3.connect(self.DATABASE_NAME)
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS inventory (
+                    item_name TEXT PRIMARY KEY,
+                    stock_quantity INTEGER
+                )
+            ''')
+            conn.commit()
+            print("Inventory table created.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Error creating inventory table: {e}")
+        finally:
+            conn.close()
 
     def insert_into_database(self, cart_data):
         conn = self.create_connection()
+        if conn is None:
+            return
         cursor = conn.cursor()
-        inventory = InventoryManager()
-
         try:
             for item_name, quantity, price, total_price in cart_data:
-                print(f"Inserting: {item_name}, {quantity}, {price}, {total_price}")  # Debugging line
-                cursor.execute('''INSERT INTO sales (item_name, quantity, price, total_price, date)
-                                  VALUES (?, ?, ?, ?, ?)''',
-                               (item_name, quantity, price, total_price, str(datetime.datetime.now())))
+                # Format the current date and time
+                current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # Deduct stock from inventory
-                inventory.update_stock(item_name, quantity)
-
+                # Insert the data including the formatted date and time
+                cursor.execute('''
+                    INSERT INTO sales (item_name, quantity, price, total_price, date)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (item_name, quantity, price, total_price, current_datetime))
             conn.commit()
-        except Exception as e:
-            messagebox.showerror('Database Error', f"Error inserting data: {e}")
+            print("Sales data inserted successfully.")
+        except sqlite3.Error as e:
+            messagebox.showerror("Database Error", f"Error inserting sales data: {e}")
         finally:
             conn.close()
+
+    def export_to_csv(self, csv_filename):
+        conn = self.create_connection()
+        if conn is None:
+            return
+        cursor = conn.cursor()
+        try:
+            # Fetch all rows from the sales table
+            cursor.execute("SELECT * FROM sales")
+            rows = cursor.fetchall()
+
+            # Get column names
+            column_names = [description[0] for description in cursor.description]
+
+            # Write data to CSV
+            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(column_names)  # Write column headers
+                writer.writerows(rows)  # Write rows from database
+            print(f"Data exported successfully to {csv_filename}")
+            messagebox.showinfo("Export Successful", f"Data exported to {csv_filename}")
+        except sqlite3.Error as e:
+            messagebox.showerror("Export Error", f"Error exporting data: {e}")
+        finally:
+            conn.close()
+
+    def restock_item(self):
+        item_name = simpledialog.askstring("Restock", "Enter item name:")
+        if not item_name:
+            return
+        quantity = simpledialog.askinteger("Restock", "Enter quantity to restock:")
+        if quantity and quantity > 0:
+            print(f"Restocking {quantity} units of {item_name}")
+            messagebox.showinfo("Restocked", f"{item_name} restocked with {quantity} units.")
+        else:
+            messagebox.showerror("Invalid Input", "Please enter a valid quantity.")
 
     def gather_cart_data(self):
         cart_data = []
@@ -59,87 +139,38 @@ class Mazi_Flow:
             values = self.tree.item(row_id)["values"]
             item_name = values[1]
             quantity = values[2]
-            price = float(values[3][1:])  # Remove 'R' and convert to float
+            price = float(values[3][1:].replace(',', ''))
             total_price = quantity * price
             cart_data.append((item_name, quantity, price, total_price))
-        print(cart_data)  # Debugging line to check the cart data
+        print(cart_data)
         return cart_data
 
     def pay_bill(self):
         cart_data = self.gather_cart_data()
         if not cart_data:
-            messagebox.showwarning('No Items', 'There are no items in the cart to pay.')
+            messagebox.showwarning("No Items", "The cart is empty.")
             return
-        print("Cart Data:", cart_data)  # Debugging line
         self.insert_into_database(cart_data)
-        self.tree.delete(*self.tree.get_children())  # Clear the cart
+        self.tree.delete(*self.tree.get_children())
         self.update_total()
-        messagebox.showinfo('Payment', 'Bill paid and data saved to database!')
-
-    def restock_item(self):
-        inventory = InventoryManager()
-        item_name = simpledialog.askstring("Restock", "Enter item name:")
-        if not item_name:
-            return  # If user cancels input
-
-        quantity = simpledialog.askinteger("Restock", "Enter quantity to add:")
-        if quantity and quantity > 0:
-            inventory.add_stock(item_name, quantity)
-            messagebox.showinfo("Success", f"Stock updated: {item_name} +{quantity}")
-        else:
-            messagebox.showerror("Invalid Input", "Please enter a valid quantity.")
-
-    def export_to_csv(self, csv_filename):
-        conn = self.create_connection()
-        cursor = conn.cursor()
-        try:
-            # Fetch all data from the "sales" table
-            cursor.execute("SELECT * FROM sales")
-            rows = cursor.fetchall()
-
-            # Get column names
-            column_names = [description[0] for description in cursor.description]
-
-            # Write to a CSV file
-            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(column_names)  # Write column headers
-                writer.writerows(rows)  # Write all rows
-            print(f"Data exported to {csv_filename} successfully!")
-        except Exception as e:
-            print(f"Error exporting to CSV: {e}")
-        finally:
-            conn.close()
-
+        messagebox.showinfo("Payment Success", "Bill paid and data saved to database.")
 
     def __init__(self):
-        # Initialize main window
         self.root = CTk()
         self.root.title("Dashboard")
         self.root.geometry("1400x700+0+0")
         self.root.configure(bg="#1A5276")
-
-        # Create the database and table
-        self.create_table()
-
-        # Initialize styles
+        self.create_tables()
+        self.create_inventory_table()
         self.init_styles()
-
-        # Create frames
         self.create_frames()
-
-        # Create UI components
         self.create_top_frame()
         self.create_sidebar_buttons()
         self.create_category_buttons()
         self.create_bill_section()
-
-        # Initialize default category view
         self.cart = []
         self.current_category = None
-        self.show_items("Beers")  # Display Beers by default
-
-        # Start the application
+        self.show_items("Beers")
         self.root.mainloop()
 
     def init_styles(self):
