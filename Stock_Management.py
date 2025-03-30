@@ -9,7 +9,7 @@ class SalesDashboard:
         self.root = root
         self.itemFrames = {}
         self.CategoryFrame = ttk.Frame(root)
-        self.CategoryFrame.grid(row=0, column=0, sticky="nsew")  # Use grid here
+        self.CategoryFrame.grid(row=0, column=0, sticky="nsew") # corrected to grid
         self.create_category_buttons()
 
     def create_category_buttons(self):
@@ -77,7 +77,7 @@ class SalesDashboard:
         for category in self.categories.keys():
             frame = ttk.Frame(self.root, style="Item.TFrame")
             self.itemFrames[category] = frame
-            frame.grid(row=2, column=0, sticky="nsew")  # Use grid here
+            frame.grid(row=2, column=0, sticky="nsew") # corrected to grid
             frame.grid_remove()
 
         for i, text in enumerate(self.categories.keys()):
@@ -88,31 +88,31 @@ class SalesDashboard:
                 command=lambda text=text: self.show_items(text)
             ).grid(row=0, column=i, padx=5, pady=5)
 
-        def show_items(self, category):
-            for frame in self.itemFrames.values():
-                frame.grid_remove()
-            frame = self.itemFrames[category]
-            frame.grid(row=2, column=0, sticky="nsew")  # Use grid here
-            for i, item in enumerate(self.categories[category]):
-                item_name, image_path, price = item
-                ttk.Button(
-                    frame,
-                    text=item_name,
-                    command=lambda name=item_name: self.update_inventory_on_sale(name)
-                ).grid(row=i, column=0, padx=5, pady=5)
+    def show_items(self, category):
+        for frame in self.itemFrames.values():
+            frame.grid_remove()
+        frame = self.itemFrames[category]
+        frame.grid(row=2, column=0, sticky="nsew") # corrected to grid
+        for i, item in enumerate(self.categories[category]):
+            item_name, image_path, price = item
+            ttk.Button(
+                frame,
+                text=item_name,
+                command=lambda name=item_name: self.update_inventory_on_sale(name)
+            ).grid(row=i, column=0, padx=5, pady=5)
 
-        def update_inventory_on_sale(self, item_name):
-            """Updates inventory when an item is sold."""
-            try:
-                current_stock = database.get_inventory(item_name)
-                if current_stock > 0:
-                    new_stock = current_stock - 1  # Assuming quantity is 1
-                    database.insert_inventory(item_name, new_stock)
-                    messagebox.showinfo("Success", f"{item_name} stock updated.")
-                else:
-                    messagebox.showerror("Error", f"{item_name} is out of stock.")
-            except Exception as e:
-                messagebox.showerror("Error", f"An error occurred: {e}")
+    def update_inventory_on_sale(self, item_name):
+        """Updates inventory when an item is sold."""
+        try:
+            current_stock = database.get_inventory(item_name)
+            if current_stock > 0:
+                new_stock = current_stock - 1  # Assuming quantity is 1
+                database.insert_inventory(item_name, new_stock)
+                messagebox.showinfo("Success", f"{item_name} stock updated.")
+            else:
+                messagebox.showerror("Error", f"{item_name} is out of stock.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
 
 def inventory_page(window):
     inventory_frame = CTkFrame(window)
@@ -132,41 +132,44 @@ def inventory_page(window):
 
     populate_treeview()
 
-    # Entry fields and buttons
-    item_name_label = CTkLabel(inventory_frame, text="Item Name:")
-    item_name_label.pack(pady=5)
-    item_name_entry = CTkEntry(inventory_frame)
-    item_name_entry.pack(pady=5)
+    # Entry fields and buttons for adding stock
+    add_item_name_label = CTkLabel(inventory_frame, text="Add Item Name:")
+    add_item_name_label.pack(pady=5)
+    add_item_name_entry = CTkEntry(inventory_frame)
+    add_item_name_entry.pack(pady=5)
 
-    stock_quantity_label = CTkLabel(inventory_frame, text="Stock Quantity:")
-    stock_quantity_label.pack(pady=5)
-    stock_quantity_entry = CTkEntry(inventory_frame)
-    stock_quantity_entry.pack(pady=5)
+    add_stock_quantity_label = CTkLabel(inventory_frame, text="Add Stock Quantity:")
+    add_stock_quantity_label.pack(pady=5)
+    add_stock_quantity_entry = CTkEntry(inventory_frame)
+    add_stock_quantity_entry.pack(pady=5)
 
-    def add_update_item():
-        item_name = item_name_entry.get()
-        stock_quantity = stock_quantity_entry.get()
+    def add_stock():
+        item_name = add_item_name_entry.get()
+        stock_quantity = add_stock_quantity_entry.get()
         try:
             stock_quantity = int(stock_quantity)
-            database.insert_inventory(item_name, stock_quantity)
+            current_stock = database.get_inventory(item_name) or 0  # Get current stock or 0 if not found
+            new_stock = current_stock + stock_quantity
+            database.insert_inventory(item_name, new_stock)
             populate_treeview()
+            messagebox.showinfo("Success", f"{stock_quantity} added to {item_name}.")
         except ValueError:
             messagebox.showerror("Error", "Stock Quantity must be a number.")
-        item_name_entry.delete(0, END)
-        stock_quantity_entry.delete(0, END)
+        add_item_name_entry.delete(0, END)
+        add_stock_quantity_entry.delete(0, END)
 
-    add_update_button = CTkButton(inventory_frame, text="Add/Update Item", command=add_update_item)
-    add_update_button.pack(pady=10)
+    add_stock_button = CTkButton(inventory_frame, text="Add Stock", command=add_stock)
+    add_stock_button.pack(pady=10)
 
     return inventory_frame
 
 def switch_to_inventory():
-    sales_dashboard.CategoryFrame.pack_forget()
+    sales_dashboard.CategoryFrame.grid_remove() # changed to grid_remove
     inventory_frame.pack(fill=BOTH, expand=True)
 
 def switch_to_sales():
     inventory_frame.pack_forget()
-    sales_dashboard.CategoryFrame.pack()
+    sales_dashboard.CategoryFrame.grid(row=0, column=0, sticky="nsew") # changed to grid
 
 if __name__ == "__main__":
     window = CTk()
@@ -176,12 +179,12 @@ if __name__ == "__main__":
     inventory_frame = inventory_page(window)
     sales_dashboard = SalesDashboard(window)
 
-    inventory_frame.pack_forget() #start with sales page
+    inventory_frame.grid_remove() #start with sales page
 
     inventory_button = CTkButton(window, text="Inventory", command=switch_to_inventory)
-    inventory_button.pack(pady=10)
+    inventory_button.grid(row=1, column=0, pady=10)
 
     sales_button = CTkButton(window, text="Sales", command=switch_to_sales)
-    sales_button.pack(pady=10)
+    sales_button.grid(row=2, column=0, pady=10)
 
     window.mainloop()

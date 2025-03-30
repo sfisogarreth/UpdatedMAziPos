@@ -1,137 +1,31 @@
-import sqlite3
 import datetime
 from customtkinter import *
 from tkinter import messagebox, simpledialog, Label, Button
-import csv
 from tkinter import ttk
 from PIL import Image, ImageTk
 import os
 import subprocess
+import database  # Import database functions
 
 class Mazi_Flow:
-    DATABASE_NAME = "Mazi~flow~order.db"
+    DATABASE_NAME = "Mazi_Store.db"
 
-    def create_connection(self):
-        try:
-            return sqlite3.connect(self.DATABASE_NAME)
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"Unable to connect to the database: {e}")
-            return None
-
-    def create_tables(self):
-        conn = self.create_connection()
-        if conn is None:
-            return
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS sales (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    item_name TEXT,
-                    quantity INTEGER,
-                    price REAL,
-                    total_price REAL,
-                    date TEXT
-                )
-            ''')
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS employees (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT,
-                    position TEXT,
-                    salary REAL
-                )
-            ''')
-            conn.commit()
-            print("Tables ensured in database.")
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"Error creating tables: {e}")
-        finally:
-            conn.close()
-
-    def check_sales_data():
-        conn = sqlite3.connect("Mazi_Store.db")
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM sales")
-        rows = cursor.fetchall()
-        conn.close()
-
-        for row in rows:
-            print(row)
-    def create_inventory_table(self):
-        conn = sqlite3.connect(self.DATABASE_NAME)
-        cursor = conn.cursor()
-        try:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS inventory (
-                    item_name TEXT PRIMARY KEY,
-                    stock_quantity INTEGER
-                )
-            ''')
-            conn.commit()
-            print("Inventory table created.")
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"Error creating inventory table: {e}")
-        finally:
-            conn.close()
-
-    def insert_into_database(self, cart_data):
-        conn = self.create_connection()
-        if conn is None:
-            return
-        cursor = conn.cursor()
-        try:
-            for item_name, quantity, price, total_price in cart_data:
-                # Format the current date and time
-                current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                # Insert the data including the formatted date and time
-                cursor.execute('''
-                    INSERT INTO sales (item_name, quantity, price, total_price, date)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (item_name, quantity, price, total_price, current_datetime))
-            conn.commit()
-            print("Sales data inserted successfully.")
-        except sqlite3.Error as e:
-            messagebox.showerror("Database Error", f"Error inserting sales data: {e}")
-        finally:
-            conn.close()
-
-    def export_to_csv(self, csv_filename):
-        conn = self.create_connection()
-        if conn is None:
-            return
-        cursor = conn.cursor()
-        try:
-            # Fetch all rows from the sales table
-            cursor.execute("SELECT * FROM sales")
-            rows = cursor.fetchall()
-
-            # Get column names
-            column_names = [description[0] for description in cursor.description]
-
-            # Write data to CSV
-            with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerow(column_names)  # Write column headers
-                writer.writerows(rows)  # Write rows from database
-            print(f"Data exported successfully to {csv_filename}")
-            messagebox.showinfo("Export Successful", f"Data exported to {csv_filename}")
-        except sqlite3.Error as e:
-            messagebox.showerror("Export Error", f"Error exporting data: {e}")
-        finally:
-            conn.close()
-
-    def restock_item(self):
-        item_name = simpledialog.askstring("Restock", "Enter item name:")
-        if not item_name:
-            return
-        quantity = simpledialog.askinteger("Restock", "Enter quantity to restock:")
-        if quantity and quantity > 0:
-            print(f"Restocking {quantity} units of {item_name}")
-            messagebox.showinfo("Restocked", f"{item_name} restocked with {quantity} units.")
-        else:
-            messagebox.showerror("Invalid Input", "Please enter a valid quantity.")
+    def __init__(self):
+        self.root = CTk()
+        self.root.title("Dashboard")
+        self.root.geometry("1400x700+0+0")
+        self.root.configure(bg="#1A5276")
+        database.connect_database()  # Setup database and tables
+        self.init_styles()
+        self.create_frames()
+        self.create_top_frame()
+        self.create_sidebar_buttons()
+        self.create_category_buttons()
+        self.create_bill_section()
+        self.cart = []
+        self.current_category = None
+        self.show_items("Beers")
+        self.root.mainloop()
 
     def gather_cart_data(self):
         cart_data = []
@@ -150,28 +44,29 @@ class Mazi_Flow:
         if not cart_data:
             messagebox.showwarning("No Items", "The cart is empty.")
             return
-        self.insert_into_database(cart_data)
+
+        current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for item_name, quantity, price, total_price in cart_data:
+            database.insert_sale(item_name, quantity, price, total_price, current_datetime)
+
         self.tree.delete(*self.tree.get_children())
         self.update_total()
         messagebox.showinfo("Payment Success", "Bill paid and data saved to database.")
 
-    def __init__(self):
-        self.root = CTk()
-        self.root.title("Dashboard")
-        self.root.geometry("1400x700+0+0")
-        self.root.configure(bg="#1A5276")
-        self.create_tables()
-        self.create_inventory_table()
-        self.init_styles()
-        self.create_frames()
-        self.create_top_frame()
-        self.create_sidebar_buttons()
-        self.create_category_buttons()
-        self.create_bill_section()
-        self.cart = []
-        self.current_category = None
-        self.show_items("Beers")
-        self.root.mainloop()
+    def export_to_csv(self, Sales):
+        database.export_sales_to_csv()
+
+    def restock_item(self):
+        item_name = simpledialog.askstring("Restock", "Enter item name:")
+        if not item_name:
+            return
+        quantity = simpledialog.askinteger("Restock", "Enter quantity to restock:")
+        if quantity and quantity > 0:
+            print(f"Restocking {quantity} units of {item_name}")
+            messagebox.showinfo("Restocked", f"{item_name} restocked with {quantity} units.")
+        else:
+            messagebox.showerror("Invalid Input", "Please enter a valid quantity.")
 
     def init_styles(self):
         # Tkinter styles
@@ -187,7 +82,7 @@ class Mazi_Flow:
         style.configure('Treeview', font=('Arial', 16, 'bold'), rowheight=20, background='#161C30', foreground="Red")
 
     def create_frames(self):
-        self.Topframe = ttk.Frame(self.root, style="Top.TFrame", height=150)  # Restrict height
+        self.Topframe = ttk.Frame(self.root, style="Top.TFrame", height=150)
         self.Topframe.grid(row=0, column=0, columnspan=6, sticky="nsew")
         self.Topframe.grid_propagate(False)
 
@@ -202,42 +97,38 @@ class Mazi_Flow:
 
         self.itemFrames = {}
 
-        # Make the window responsive to resizing
-        self.root.grid_rowconfigure(0, weight=0)  # Top frame
-        self.root.grid_rowconfigure(1, weight=1)  # Categories and items
-        self.root.grid_rowconfigure(2, weight=1)  # Bill section
-        self.root.grid_columnconfigure(1, weight=2)  # Categories and items
-        self.root.grid_columnconfigure(2, weight=2)  # Bill section
+        self.root.grid_rowconfigure(0, weight=0)
+        self.root.grid_rowconfigure(1, weight=1)
+        self.root.grid_rowconfigure(2, weight=1)
+        self.root.grid_columnconfigure(1, weight=2)
+        self.root.grid_columnconfigure(2, weight=2)
 
     def create_top_frame(self):
-        # Title Label
         image_path = "images/inventory-management.png"
-        abs_path = os.path.abspath(image_path)  # Get full path
+        abs_path = os.path.abspath(image_path)
 
-        # Check if the image exists
         if os.path.exists(abs_path):
             try:
-                img = Image.open(abs_path)  # Open image using PIL
-                img = img.resize((50, 50))  # Resize image if needed
-                self.bgImage = ImageTk.PhotoImage(img)  # Convert for Tkinter
+                img = Image.open(abs_path)
+                img = img.resize((50, 50))
+                self.bgImage = ImageTk.PhotoImage(img)
             except Exception as e:
                 messagebox.showerror("Image Error", f"Error loading image: {e}")
-                self.bgImage = None  # Set to None if there's an error
+                self.bgImage = None
         else:
             messagebox.showwarning("Missing Image", f"Image not found: {abs_path}")
-            self.bgImage = None  # Prevent crashes
+            self.bgImage = None
 
-        # Create the label with or without an image
         topframelbl = ttk.Label(
             self.Topframe,
-            image=self.bgImage if self.bgImage else "",  # Use image if available
-            text="                       ***Mazi~Flow System***     ",
+            image=self.bgImage if self.bgImage else "",
+            text="                       ***Mazi~Flow System*** ",
             font=("Goudy Old Style", 30, "bold"),
-            compound="left",  # Ensures the image is on the left of the text
+            compound="left",
             background="#000000",
             foreground="white"
         )
-        topframelbl.pack(side="top", pady=5, padx=5)  # Place at the top
+        topframelbl.pack(side="top", pady=5, padx=5)
         subtitlelbl = ttk.Label(
             self.Topframe,
             text="Welcome Gareth    Date: 08-07-2024    Time: 12:02:24 pm",
@@ -247,35 +138,23 @@ class Mazi_Flow:
             foreground="white",
         )
         subtitlelbl.pack(side="top", pady=5)
-        # Logout Button
         logoutBtn = CTkButton(
             self.Topframe,
             text="Logout",
             font=("times new roman", 20, "bold"),
-            text_color="white",  # Text color
-            fg_color="#00008B",  # Background color
-            hover_color="#FF0000"  # Hover color
+            text_color="white",
+            fg_color="#00008B",
+            hover_color="#FF0000"
         )
-        logoutBtn.pack(side="right", padx=(10, 65), pady=10)  # Align to the right
+        logoutBtn.pack(side="right", padx=(10, 65), pady=10)
 
     def create_sidebar_buttons(self):
-        # Load the image using Pillow
         image_path = "images/2011.jpg"
-
-        # Open the image
         img = Image.open(image_path)
-
-        # Resize the image
-        img = img.resize((200, 200))  # You can adjust the width and height as needed
-
-        # Convert the resized image to a Tkinter PhotoImage object
+        img = img.resize((200, 200))
         photo = ImageTk.PhotoImage(img)
-
-        # Now, use the resized image in your Tkinter Label or other widgets
         sidebar_image = ttk.Label(self.sideBarFrame, image=photo)
         sidebar_image.grid(row=0, column=0)
-
-        # Keep a reference to avoid garbage collection
         sidebar_image.photo = photo
         sidebar_buttons = [
             ("P.O.S", None), ("Management", None), ("Statistics", None),
@@ -288,7 +167,7 @@ class Mazi_Flow:
                 text=text,
                 style="Sidebar.TButton",
                 command=command
-            ).grid(row=i + 1, column=0, pady=2, padx=2, sticky="ew")  # Adjust row to avoid overlap
+            ).grid(row=i + 1, column=0, pady=2, padx=2, sticky="ew")
 
     def create_category_buttons(self):
         self.categories = {
@@ -352,7 +231,6 @@ class Mazi_Flow:
                 ("Steak", "images/Steak.jpeg", 79.99)
             ]
         }
-
         for category in self.categories.keys():
             frame = ttk.Frame(self.root, style="Item.TFrame")
             self.itemFrames[category] = frame
@@ -368,10 +246,7 @@ class Mazi_Flow:
             ).grid(row=0, column=i, padx=5, pady=5)
 
     def create_bill_section(self):
-        # Treeview as a Cart
-        ttk.Label(self.BillFrame, text="Order Summary", font=("Arial", 14, "bold"), background="#0b8318").pack(
-            anchor="w", padx=10, pady=5)
-
+        ttk.Label(self.BillFrame, text="Order Summary", font=("Arial", 14, "bold"), background="#0b8318").pack(anchor="w", padx=10, pady=5)
         self.tree = ttk.Treeview(self.BillFrame, columns=("ID", "Item", "Quantity", "Price"), show="headings")
         self.tree.heading("ID", text="ID")
         self.tree.heading("Item", text="Item")
@@ -382,26 +257,20 @@ class Mazi_Flow:
         self.tree.column("Quantity", anchor="center", width=50)
         self.tree.column("Price", anchor="center", width=50)
         self.tree.pack(fill="both", expand=True)
-
         self.total_label = Label(self.BillFrame, text="TOTAL: R0.00", font=("Arial", 20, "bold"), bg="red", fg="black")
         self.total_label.pack(anchor="e", padx=10, pady=10)
-
         pay_button = Button(self.BillFrame, text="Pay Bill", width=20, font=("Arial", 18, "bold"), bg="#58D68D", command=self.pay_bill)
         pay_button.pack(pady=10)
 
     def add_to_cart(self, item, price):
-        # Check if item already exists in cart
         for row_id in self.tree.get_children():
             values = self.tree.item(row_id)["values"]
             if values[1] == item:
-                # Update quantity and price
                 new_quantity = values[2] + 1
                 new_price = new_quantity * price
                 self.tree.item(row_id, values=(values[0], item, new_quantity, f"R{new_price:.2f}"))
                 self.update_total()
                 return
-
-        # Add new item to Treeview
         item_id = len(self.cart) + 1
         self.tree.insert("", "end", values=(item_id, item, 1, f"R{price:.2f}"))
         self.cart.append((item_id, item, 1, price))
@@ -411,39 +280,26 @@ class Mazi_Flow:
         total = 0.0
         for row_id in self.tree.get_children():
             values = self.tree.item(row_id)["values"]
-            price = float(values[3][1:])  # Remove "R" from price and convert to float
+            price = float(values[3][1:])
             total += price
         self.total_label.config(text=f"TOTAL: R{total:.2f}")
 
     def show_items(self, category):
-        # Hide all category frames
         for frame in self.itemFrames.values():
             frame.grid_remove()
-
-        # Show the selected category
         self.itemFrames[category].grid()
-
-        # Clear previous widgets and add new ones
         for widget in self.itemFrames[category].winfo_children():
             widget.destroy()
-
-        # Set max_columns for responsive layout
         max_columns = 5
         for index, item in enumerate(self.categories[category]):
             name, image_path, price = item
-
-            # Load and resize image
             if os.path.exists(image_path):
                 img = Image.open(image_path)
-                img = img.resize((100, 100))  # Resize image to fit
+                img = img.resize((100, 100))
                 photo = ImageTk.PhotoImage(img)
-
-                # Create image label and place it within the grid
                 img_label = Label(self.itemFrames[category], image=photo, bg="#2C3E50")
-                img_label.photo = photo  # Prevent garbage collection
+                img_label.photo = photo
                 img_label.grid(row=index // max_columns * 2, column=index % max_columns, padx=10, pady=10)
-
-            # Create a button beneath the image
             button = ttk.Button(
                 self.itemFrames[category],
                 text=f"{name}\nR{price}",
@@ -456,22 +312,5 @@ class Mazi_Flow:
         self.root.destroy()
         subprocess.run(["python", "Login.py"])
 
-        def create_inventory_table(self):
-            conn = sqlite3.connect('Mazi~flow~order.db')
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS inventory (
-                    item_name TEXT PRIMARY KEY,
-                    stock_quantity INTEGER
-                )
-            ''')
-            conn.commit()
-            conn.close()
-            pass
-
-maziflow = Mazi_Flow()  # ✅ Create an instance first
-maziflow.create_inventory_table()
-
-# Run the application
 if __name__ == "__main__":
     Mazi_Flow()

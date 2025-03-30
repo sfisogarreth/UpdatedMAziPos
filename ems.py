@@ -3,31 +3,43 @@ from PIL import Image
 import os
 from tkinter import messagebox
 from tkinter import ttk
-import database
-
-
-
-
+import database  # Import your database.py module
 
 def treeview_data():
-    tree.delete(*tree.get_children())
-    employees=database.fetch_employees()
-    for employee in employees:
-        tree.insert('',END,values=employee)
+    """Refresh TreeView with employee data from the database."""
+    print("Refreshing TreeView...")  # Debugging
+    for record in tree.get_children():
+        tree.delete(record)  # Clear existing TreeView data
 
-
-
+    employee_list = database.fetch_employees()  # Fetch employees from database
+    print("Employee List from Database:", employee_list)  # Debugging
+    for employee in employee_list:
+        print("Inserting:", employee)  # Debugging
+        tree.insert('', 'end', values=(employee['id'], employee['name'],
+                                       employee['surname'], employee['phone'],
+                                       employee['position'], employee['gender'],
+                                       employee['salary']))
+    print("Treeview Refresh Complete")
 
 # Function to add employee
 def add_employee():
-
+    print("Adding Employee...")
     if Id_entry.get() == '' or nameEntry.get() == '' or snameEntry.get() == '' or phoneEntry.get() == '' or salaryEntry.get() == '':
         messagebox.showerror('Error', 'All fields should be entered')
-    elif database.id_exist(Id_entry.get()):
-        messagebox.showerror('Error',"ID Has ALready Been Allocated")
+    elif database.id_exist("employees", "id", Id_entry.get()):
+        messagebox.showerror('Error', "ID Has Already Been Allocated")
     else:
-        database.insert(Id_entry.get(), nameEntry.get(), snameEntry.get(), phoneEntry.get(), roleOptBox.get(), genderDropBox.get(), salaryEntry.get())
-        treeview_data()
+        id = Id_entry.get()
+        name = nameEntry.get()
+        surname = snameEntry.get()
+        phone = phoneEntry.get()
+        position = roleOptBox.get()
+        gender = genderDropBox.get()
+        salary = salaryEntry.get()
+        print(f"Data to insert: id={id}, name={name}, surname={surname}, phone={phone}, position={position}, gender={gender}, salary={salary}")
+        database.insert_employee(id, name, surname, phone, position, gender, salary)
+        treeview_data()  # Refresh TreeView
+        print("Treeview refreshed after add")
         messagebox.showinfo('Success', 'Employee added successfully')
         clear_entries()
 
@@ -55,7 +67,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 emsImage = os.path.join(script_dir, "images", "emsImage.webp")
 
 # Load the image
-TopImage = CTkImage(Image.open(emsImage), size=(1350,150))
+TopImage = CTkImage(Image.open(emsImage), size=(1350, 150))
 
 # Create and place the image label
 Image_label = CTkLabel(window, image=TopImage, text="", text_color="white")
@@ -125,7 +137,7 @@ searchEntry.grid(row=0, column=1)
 searchBtn = CTkButton(right_frame, text="Search", font=('arial', 20, 'bold'), text_color="white")
 searchBtn.grid(row=0, column=2, pady=5)
 
-ShowAllBtn = CTkButton(right_frame, text="Show All", font=('arial', 20, 'bold'), text_color="white")
+ShowAllBtn = CTkButton(right_frame, text="Show All", font=('arial', 20, 'bold'), text_color="white", command=treeview_data)
 ShowAllBtn.grid(row=0, column=3, pady=5)
 
 tree = ttk.Treeview(right_frame, height=20)
@@ -149,7 +161,7 @@ tree.column('Salary', anchor=CENTER, width=80)
 
 style = ttk.Style()
 style.configure('Treeview.Heading', font=('arial', 16, 'bold'), text_color="white")
-style.configure('Treeview',font=('arial', 16, 'bold'),rowheight=20,background='#161C30',foreground="Red")
+style.configure('Treeview', font=('arial', 16, 'bold'), rowheight=20, background='#161C30', foreground="Red")
 scrollbar = ttk.Scrollbar(right_frame, orient=VERTICAL)
 scrollbar.grid(row=0, column=4, stick='ns')
 
@@ -171,7 +183,6 @@ deleteBtn.grid(row=0, column=3, pady=5, padx=5)
 deleteAllBtn = CTkButton(btnFrame, text="Delete All", font=('arial', 20, 'bold'), text_color="white", width=160, corner_radius=15)
 deleteAllBtn.grid(row=0, column=4, pady=5, padx=5)
 
-
 treeview_data()
-# Run the main loop
+
 window.mainloop()
